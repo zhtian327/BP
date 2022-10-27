@@ -5,20 +5,20 @@ from torchsummary import summary
 import math
 
 class Bottleneck(nn.Module):
-    expansion = 2
+    expansion = 4
 
     def __init__(self, inplanes, planes, stride=1, downsample=None):
         super(Bottleneck, self).__init__()
         
-        self.conv1 = nn.Conv1d(inplanes, planes, kernel_size=3, stride=stride, padding=1, bias=False) # change
+        self.conv1 = nn.Conv1d(inplanes, planes, kernel_size=1, stride=stride, bias=False) # change
         self.bn1 = nn.BatchNorm1d(planes)
         
         self.conv2 = nn.Conv1d(planes, planes, kernel_size=3, stride=1, # change
                     padding=1, bias=False)
         self.bn2 = nn.BatchNorm1d(planes)
         
-        # self.conv3 = nn.Conv1d(planes, planes * 4, kernel_size=1, bias=False)
-        # self.bn3 = nn.BatchNorm1d(planes * 4)
+        self.conv3 = nn.Conv1d(planes, planes * 4, kernel_size=1, bias=False)
+        self.bn3 = nn.BatchNorm1d(planes * 4)
         self.relu = nn.ReLU(inplace=True)
         self.downsample = downsample
         self.stride = stride
@@ -34,22 +34,22 @@ class Bottleneck(nn.Module):
         out = self.bn2(out)
         out = self.relu(out)
 
-        #out = self.conv3(out)
-        #out = self.bn3(out)
+        out = self.conv3(out)
+        out = self.bn3(out)
 
         if self.downsample is not None:
             residual = self.downsample(x)
 
-        out = out + residual
+        out += residual
         out = self.relu(out)
 
         return out
 
 
-class ResNet_18(nn.Module):
+class ResNet(nn.Module):
     def __init__(self, block=Bottleneck, layers=[2,2,2,2], channels = 16, num_classes=2):
         self.inplanes = channels
-        super(ResNet_18, self).__init__()
+        super(ResNet, self).__init__()
         self.conv1 = nn.Conv1d(1, channels, kernel_size=7, stride=2, padding=3,
                         bias=False)
         self.bn1 = nn.BatchNorm1d(channels)
@@ -60,9 +60,9 @@ class ResNet_18(nn.Module):
         self.layer3 = self._make_layer(block, channels * 4, layers[2], stride=2)
         self.layer4 = self._make_layer(block, channels * 8, layers[3], stride=2)   # different
         self.avgpool = nn.AdaptiveAvgPool1d(1)
-        self.linear = nn.Linear(channels * 8, num_classes)
-        self.linear1 = nn.Linear(channels * 8, channels * 2)
-        self.linear2 = nn.Linear(channels * 2, num_classes)
+        self.linear1 = nn.Linear(channels * 8 * 4, channels * 8)
+        self.linear2 = nn.Linear(channels * 8, num_classes)
+
 
         for m in self.modules():
             if isinstance(m, nn.Conv1d):
@@ -74,16 +74,16 @@ class ResNet_18(nn.Module):
 
     def _make_layer(self, block, planes, blocks, stride=1):
         downsample = None
-        if stride != 1:
+        if stride != 1 or self.inplanes != planes * block.expansion:
             downsample = nn.Sequential(
-            nn.Conv1d(self.inplanes, planes,
+            nn.Conv1d(self.inplanes, planes * block.expansion,
                     kernel_size=1, stride=stride, bias=False),
-            nn.BatchNorm1d(planes),
+            nn.BatchNorm1d(planes * block.expansion),
             )
 
         layers = []
         layers.append(block(self.inplanes, planes, stride, downsample))
-        self.inplanes = planes# * block.expansion
+        self.inplanes = planes * block.expansion
         for i in range(1, blocks):
             layers.append(block(self.inplanes, planes))
 
@@ -93,13 +93,13 @@ class ResNet_18(nn.Module):
         x = self.conv1(x)
         x = self.bn1(x)
         x = self.relu(x)
-        
+        x = self.maxpool(x)
 
         x = self.layer1(x)
-        x = self.maxpool(x)
         x = self.layer2(x)
         x = self.layer3(x)
         x = self.layer4(x)
+
         x = self.avgpool(x)
         x = x.view(x.size(0), -1)
         x = self.linear1(x)
@@ -109,7 +109,7 @@ class ResNet_18(nn.Module):
 
 
 if __name__ == '__main__':
-    pre_model = ResNet_18(Bottleneck, layers=[2,2,2,2]).cuda()
+    pre_model = ResNet(Bottleneck, layers=[2,2,2,2]).cuda()
     summary(pre_model,(1, 20 * 128))
     img = torch.randn(1, 1, 20 * 128)
     out = pre_model(img)

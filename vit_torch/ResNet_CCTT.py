@@ -120,20 +120,20 @@ class ViT(nn.Module):
         return self.mlp_head(x)  # 线性输出
 
 class Bottleneck(nn.Module):
-    expansion = 2
+    expansion = 4
 
     def __init__(self, inplanes, planes, stride=1, downsample=None):
         super(Bottleneck, self).__init__()
         
-        self.conv1 = nn.Conv1d(inplanes, planes, kernel_size=3, stride=stride, padding=1, bias=False) # change
+        self.conv1 = nn.Conv1d(inplanes, planes, kernel_size=1, stride=stride, bias=False) # change
         self.bn1 = nn.BatchNorm1d(planes)
         
         self.conv2 = nn.Conv1d(planes, planes, kernel_size=3, stride=1, # change
                     padding=1, bias=False)
         self.bn2 = nn.BatchNorm1d(planes)
         
-        # self.conv3 = nn.Conv1d(planes, planes * 4, kernel_size=1, bias=False)
-        # self.bn3 = nn.BatchNorm1d(planes * 4)
+        self.conv3 = nn.Conv1d(planes, planes * 4, kernel_size=1, bias=False)
+        self.bn3 = nn.BatchNorm1d(planes * 4)
         self.relu = nn.ReLU(inplace=True)
         self.downsample = downsample
         self.stride = stride
@@ -149,13 +149,13 @@ class Bottleneck(nn.Module):
         out = self.bn2(out)
         out = self.relu(out)
 
-        #out = self.conv3(out)
-        #out = self.bn3(out)
+        out = self.conv3(out)
+        out = self.bn3(out)
 
         if self.downsample is not None:
             residual = self.downsample(x)
 
-        out = out + residual
+        out += residual
         out = self.relu(out)
 
         return out
@@ -175,13 +175,13 @@ class ResNet_CCTT(nn.Module):
         self.layer3 = self._make_layer(block, channels * 4, layers[2], stride=2)
         self.layer4 = self._make_layer(block, channels * 8, layers[3], stride=2)   # different
 
-        self.ViT_1 = ViT(sequence_len = channels * 32,c = channels*2,num_patches=8)
-        self.ViT_2 = ViT(sequence_len = channels * 16,c = channels*2,num_patches=8)
+        self.ViT_1 = ViT(sequence_len = channels * 128,c = channels*8,num_patches=8)
+        self.ViT_2 = ViT(sequence_len = channels * 64,c = channels*8,num_patches=8)
 
         self.avgpool = nn.AdaptiveAvgPool1d(1)
         self.linear = nn.Linear(channels * 8, num_classes)
-        self.linear1 = nn.Linear(channels * 2, channels * 2)
-        self.linear2 = nn.Linear(channels * 2, num_classes)
+        self.linear1 = nn.Linear(channels * 8, channels * 4)
+        self.linear2 = nn.Linear(channels * 4, num_classes)
 
         for m in self.modules():
             if isinstance(m, nn.Conv1d):
@@ -193,16 +193,16 @@ class ResNet_CCTT(nn.Module):
 
     def _make_layer(self, block, planes, blocks, stride=1):
         downsample = None
-        if stride != 1:
+        if stride != 1 or self.inplanes != planes * block.expansion:
             downsample = nn.Sequential(
-            nn.Conv1d(self.inplanes, planes,
+            nn.Conv1d(self.inplanes, planes * block.expansion,
                     kernel_size=1, stride=stride, bias=False),
-            nn.BatchNorm1d(planes),
+            nn.BatchNorm1d(planes * block.expansion),
             )
 
         layers = []
         layers.append(block(self.inplanes, planes, stride, downsample))
-        self.inplanes = planes# * block.expansion
+        self.inplanes = planes * block.expansion
         for i in range(1, blocks):
             layers.append(block(self.inplanes, planes))
 

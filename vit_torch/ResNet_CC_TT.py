@@ -140,20 +140,20 @@ class ViT(nn.Module):
 
 
 class Bottleneck(nn.Module):
-    expansion = 2
+    expansion = 4
 
     def __init__(self, inplanes, planes, stride=1, downsample=None):
         super(Bottleneck, self).__init__()
         
-        self.conv1 = nn.Conv1d(inplanes, planes, kernel_size=3, stride=stride, padding=1, bias=False) # change
+        self.conv1 = nn.Conv1d(inplanes, planes, kernel_size=1, stride=stride, bias=False) # change
         self.bn1 = nn.BatchNorm1d(planes)
         
         self.conv2 = nn.Conv1d(planes, planes, kernel_size=3, stride=1, # change
                     padding=1, bias=False)
         self.bn2 = nn.BatchNorm1d(planes)
         
-        # self.conv3 = nn.Conv1d(planes, planes * 4, kernel_size=1, bias=False)
-        # self.bn3 = nn.BatchNorm1d(planes * 4)
+        self.conv3 = nn.Conv1d(planes, planes * 4, kernel_size=1, bias=False)
+        self.bn3 = nn.BatchNorm1d(planes * 4)
         self.relu = nn.ReLU(inplace=True)
         self.downsample = downsample
         self.stride = stride
@@ -169,13 +169,13 @@ class Bottleneck(nn.Module):
         out = self.bn2(out)
         out = self.relu(out)
 
-        #out = self.conv3(out)
-        #out = self.bn3(out)
+        out = self.conv3(out)
+        out = self.bn3(out)
 
         if self.downsample is not None:
             residual = self.downsample(x)
 
-        out = out + residual
+        out += residual
         out = self.relu(out)
 
         return out
@@ -197,18 +197,18 @@ class ResNet_CC_TT(nn.Module):
 
         self.ViT_1 = ViT(sequence_len = channels*64,c = channels*1,num_patches=8, flag_em=True,flag_mlp=False,dim=512)
         self.ViT_2 = ViT(sequence_len = channels*32,c = channels*1,num_patches=8,flag_em=False,flag_mlp=True,dim=256)
-        self.conv2 = nn.Conv1d(16, 32, kernel_size=1, stride=1, padding=0,
+        self.conv2 = nn.Conv1d(channels, channels*4, kernel_size=1, stride=1, padding=0,
                         bias=False)
-        self.conv3 = nn.Conv1d(32, 32, kernel_size=3, stride=2, padding=1,
+        self.conv3 = nn.Conv1d(channels*4, channels*8, kernel_size=3, stride=2, padding=1,
                         bias=False)
 
-        self.conv4 = nn.Conv1d(64, 32, kernel_size=1, stride=1, padding=0,
+        self.conv4 = nn.Conv1d(channels*16, channels*8, kernel_size=1, stride=1, padding=0,
                         bias=False)
 
         self.avgpool = nn.AdaptiveAvgPool1d(1)
         self.linear = nn.Linear(channels * 8, num_classes)
-        self.linear1 = nn.Linear(channels * 2, channels)
-        self.linear2 = nn.Linear(channels, num_classes)
+        self.linear1 = nn.Linear(channels * 8, channels*4)
+        self.linear2 = nn.Linear(channels*4, num_classes)
 
         for m in self.modules():
             if isinstance(m, nn.Conv1d):
@@ -220,16 +220,16 @@ class ResNet_CC_TT(nn.Module):
 
     def _make_layer(self, block, planes, blocks, stride=1):
         downsample = None
-        if stride != 1:
+        if stride != 1 or self.inplanes != planes * block.expansion:
             downsample = nn.Sequential(
-            nn.Conv1d(self.inplanes, planes,
+            nn.Conv1d(self.inplanes, planes * block.expansion,
                     kernel_size=1, stride=stride, bias=False),
-            nn.BatchNorm1d(planes),
+            nn.BatchNorm1d(planes * block.expansion),
             )
 
         layers = []
         layers.append(block(self.inplanes, planes, stride, downsample))
-        self.inplanes = planes# * block.expansion
+        self.inplanes = planes * block.expansion
         for i in range(1, blocks):
             layers.append(block(self.inplanes, planes))
 
@@ -246,11 +246,8 @@ class ResNet_CC_TT(nn.Module):
 
 
         x_t1 = self.ViT_1(x)
-        #x_t1 = x + x_t1
-        #x_t1 = self.maxpool(x_t1)
         x_t2 = self.ViT_2(x_t1)
-        #x_t2 = x_t1 + x_t2
-        #x_t2 = self.maxpool(x_t2)
+
         x_t2 = self.conv2(x_t2)
         x_t2 = self.conv3(x_t2)
 
