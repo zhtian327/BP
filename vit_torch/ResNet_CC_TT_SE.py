@@ -35,48 +35,46 @@ class Attention(nn.Module):
     # attention
     def __init__(self, dim, heads = 8, dim_head = 64, dropout = 0.):
         super().__init__()
-        inner_dim = dim_head *  heads  # 计算最终进行全连接操作时输入神经元的个数
-        project_out = not (heads == 1 and dim_head == dim)  # 多头注意力并且输入和输出维度相同时为True
+        inner_dim = dim_head *  heads
+        project_out = not (heads == 1 and dim_head == dim)
 
-        self.heads = heads  # 多头注意力中“头”的个数
-        self.scale = dim_head ** -0.5  # 缩放操作，论文 Attention is all you need 中有介绍
+        self.heads = heads
+        self.scale = dim_head ** -0.5
+        self.attend = nn.Softmax(dim = -1)
+        self.to_qkv = nn.Linear(dim, inner_dim * 3, bias = False) 
 
-        self.attend = nn.Softmax(dim = -1)  # 初始化一个Softmax操作
-        self.to_qkv = nn.Linear(dim, inner_dim * 3, bias = False)  # 对Q、K、V三组向量先进性线性操作
-
-        # 线性全连接，如果不是多头或者输入输出维度不相等，进行空操作
         self.to_out = nn.Sequential(
             nn.Linear(inner_dim, dim),
             nn.Dropout(dropout)
         ) if project_out else nn.Identity()
 
     def forward(self, x):
-        b, n, _, h = *x.shape, self.heads  # 获得输入x的维度和多头注意力的“头”数
-        qkv = self.to_qkv(x).chunk(3, dim = -1)  # 先对Q、K、V进行线性操作，然后chunk乘三三份
-        q, k, v = map(lambda t: rearrange(t, 'b n (h d) -> b h n d', h = h), qkv)  # 整理维度，获得Q、K、V
+        b, n, _, h = *x.shape, self.heads
+        qkv = self.to_qkv(x).chunk(3, dim = -1)
+        q, k, v = map(lambda t: rearrange(t, 'b n (h d) -> b h n d', h = h), qkv)
 
-        dots = einsum('b h i d, b h j d -> b h i j', q, k) * self.scale  # Q, K 向量先做点乘，来计算相关性，然后除以缩放因子
+        dots = einsum('b h i d, b h j d -> b h i j', q, k) * self.scale
 
-        attn = self.attend(dots)  # 做Softmax运算
+        attn = self.attend(dots)
 
-        out = einsum('b h i j, b h j d -> b h i d', attn, v)  # Softmax运算结果与Value向量相乘，得到最终结果
-        out = rearrange(out, 'b h n d -> b n (h d)')  # 重新整理维度
-        return self.to_out(out)  # 做线性的全连接操作或者空操作（空操作直接输出out）
+        out = einsum('b h i j, b h j d -> b h i d', attn, v)
+        out = rearrange(out, 'b h n d -> b n (h d)')
+        return self.to_out(out)
 
 
 class Transformer(nn.Module):
     def __init__(self, dim, depth, heads, dim_head, mlp_dim, dropout = 0.):
         super().__init__()
-        self.layers = nn.ModuleList([])  # Transformer包含多个编码器的叠加
+        self.layers = nn.ModuleList([])
         for _ in range(depth):
-            # 编码器包含两大块：自注意力模块和前向传播模块
+
             self.layers.append(nn.ModuleList([
-                PreNorm(dim, Attention(dim, heads = heads, dim_head = dim_head, dropout = dropout)),  # 多头自注意力模块
-                PreNorm(dim, FeedForward(dim, mlp_dim, dropout = dropout))  # 前向传播模块
+                PreNorm(dim, Attention(dim, heads = heads, dim_head = dim_head, dropout = dropout)),
+                PreNorm(dim, FeedForward(dim, mlp_dim, dropout = dropout))
             ]))
     def forward(self, x):
         for attn, ff in self.layers:
-            # 自注意力模块和前向传播模块都使用了残差的模式
+
             x = attn(x) + x
             x = ff(x) + x
         return x
@@ -90,28 +88,25 @@ class ViT(nn.Module):
             nn.Linear(sequence_len, dim),
         )
         self.to_patch_embedding_2 = nn.Sequential(
-            #Rearrange('b c (m n)-> b n (c m)', n = num_patches,c=c),
             nn.Linear(sequence_len, dim),
         )
 
-        self.pos_embedding = nn.Parameter(torch.randn(1, num_patches, dim))  # 位置编码，获取一组正态分布的数据用于训练
-        self.cls_token = nn.Parameter(torch.randn(1, 1, dim))  # 分类令牌，可训练
+        self.pos_embedding = nn.Parameter(torch.randn(1, num_patches, dim))
+        self.cls_token = nn.Parameter(torch.randn(1, 1, dim))
 
         self.dropout = nn.Dropout(emb_dropout)
-        self.transformer = Transformer(dim, depth, heads, dim_head, mlp_dim, dropout)  # Transformer模块
+        self.transformer = Transformer(dim, depth, heads, dim_head, mlp_dim, dropout)
 
         self.pool = pool
         self.flag_em = flag_em
         self.flag_mlp = flag_mlp
-        self.to_latent = nn.Identity()  # 占位操作
+        self.to_latent = nn.Identity()
 
         self.mlp_head_1 = nn.Sequential(
-            nn.LayerNorm(dim),  # 正则化
-            #nn.Linear(dim, sequence_len),
-            #Rearrange('b n (c m)-> b c (m n)', n = num_patches, c=c)
+            nn.LayerNorm(dim),
         )
         self.mlp_head_2 = nn.Sequential(
-            nn.LayerNorm(dim),  # 正则化
+            nn.LayerNorm(dim),
             nn.Linear(dim, sequence_len),
             Rearrange('b n (c m)-> b c (m n)', n = num_patches, c=c)
         )
@@ -122,12 +117,12 @@ class ViT(nn.Module):
             x = self.to_patch_embedding_1(data)
         else:
             x = self.to_patch_embedding_2(data)
-        b, n, _ = x.shape  # shape (b, n, 1024)
+        b, n, _ = x.shape
 
-        x += self.pos_embedding[:, :]  # 进行位置编码，shape (b, n+1, 1024)
+        x += self.pos_embedding[:, :]
         x = self.dropout(x)
 
-        x = self.transformer(x)  # transformer操作
+        x = self.transformer(x)
 
         x = self.to_latent(x)
         if self.flag_mlp:
@@ -194,10 +189,9 @@ class SELayer(nn.Module):
         )
     def forward(self, x):
         b, c, _ = x.size()
-        #y = self.avg_pool(x).view(b, c) #对应Squeeze操作
-        y = self.avg_pool(x) #对应Squeeze操作
-        #y = self.fc(y).view(b, c, 1) #对应Excitation操作
-        y = self.fc(y) #对应Excitation操作
+
+        y = self.avg_pool(x)
+        y = self.fc(y)
         return x * y.expand_as(x)
 
 class ResNet_CC_TT_SE(nn.Module):
