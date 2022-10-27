@@ -11,7 +11,7 @@ from torch.optim.lr_scheduler import StepLR
 from tqdm.notebook import tqdm
 from torch.utils.tensorboard import SummaryWriter
 import time
-from vit_torch.ResNet_18_CC_TT import ResNet_18_CC_TT_SE
+from vit_torch.ResNet_CC_TT import ResNet_CC_TT_SE
 import scipy.io as sio
 
 length = 1024
@@ -61,7 +61,7 @@ print(len(train_data), len(train_loader))
 print(len(valid_data), len(valid_loader))
 
 
-model = ResNet_18_CC_TT_SE(channels = 16, num_classes = 2).cuda()
+model = ResNet_CC_TT_SE(channels = 16, num_classes = 2).cuda()
 
 
 # Training settings
