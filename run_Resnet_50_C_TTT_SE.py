@@ -11,7 +11,9 @@ from torch.optim.lr_scheduler import StepLR
 from tqdm.notebook import tqdm
 from torch.utils.tensorboard import SummaryWriter
 import time
-from vit_torch.ResNet_CC_TT import ResNet_CC_TT_SE
+from scipy.signal import find_peaks
+import scipy.signal as signal
+from vit_torch.ResNet_50_C_TTT_SE import ResNet_50_C_TTT_SE
 import scipy.io as sio
 
 length = 1024
@@ -28,27 +30,33 @@ class BpDataset(Dataset):
         sbp = int(file.split('_')[-3])
         dbp = int(file.split('_')[-2])
         raw_data = sio.loadmat(file)
-        
+
         return raw_data['ppg_ac'][0][:length].reshape(1,-1), sbp, dbp
 
-batch_size = 512
+batch_size = 256
 
-train_ = r'data/list_train.txt'
-valid_ = r'data/list_valid.txt'
+train_ = r'F:\Dataset\MIMIC-III\final\list_train.txt'
+valid_ = r'F:\Dataset\MIMIC-III\final\list_test.txt'
+#test_dir = r'F:\Dataset\MIMIC-II\test'
 
 train_list = []
 valid_list = []
-
+# for root, dirs, files in os.walk(train_dir, topdown=False):
+#     for file in files:
+#         train_list.append(os.path.join(root, file))
 with open(train_,'r') as fp:
     _=fp.readlines()
     for file in _:
         train_list.append(file.strip())
 
 np.random.shuffle(train_list)
+
 train_data = BpDataset(train_list)
 train_loader = DataLoader(dataset = train_data, batch_size=batch_size, shuffle=True )
 
-
+# for root, dirs, files in os.walk(valid_dir, topdown=False):
+#     for file in files:
+#         valid_list.append(os.path.join(root, file))
 with open(valid_,'r') as fp:
     _=fp.readlines()
     for file in _:
@@ -61,18 +69,20 @@ print(len(train_data), len(train_loader))
 print(len(valid_data), len(valid_loader))
 
 
-model = ResNet_CC_TT_SE(channels = 16, num_classes = 2).cuda()
+model = ResNet_50_C_TTT_SE(channels = 16, num_classes = 2).cuda()
+# model_path_ = r'model/cnn_resnet50_vit/model_189.pth'
+# model.load_state_dict(torch.load(model_path_))
 
 
 # Training settings
 epochs = 100
 gamma = 0.7
-lr = 5e-5
+lr = 3e-4
 seed = 42
 
 # loss function
 criterion = nn.L1Loss()
-
+#criterion = nn.MSELoss()
 # optimizer
 optimizer = optim.Adam(model.parameters(), lr=lr)
 # scheduler
@@ -90,11 +100,11 @@ def seed_everything(seed):
 
 seed_everything(seed)
 
-log_path = 'log/mimic3_resnet18_channels_16_cc_tt_se'
+log_path = 'log/mimic3_resnet50_channels_16_c_ttt_se_alldata'
 if not os.path.exists(log_path):
     os.mkdir(log_path)
 logger = SummaryWriter(log_dir=log_path)
-model_path = 'model/mimic3_resnet18_channels_16_cc_tt_se'
+model_path = 'model/mimic3_resnet50_channels_16_c_ttt_se_alldata'
 if not os.path.exists(model_path):
     os.mkdir(model_path)
 
@@ -113,7 +123,7 @@ try:
             out = model(data)
             loss1 = criterion(out[:,0], sbp_target) 
             loss2 = criterion(out[:,1], dbp_target)
-            loss = loss1 + loss2
+            loss = loss1 + loss2 * 2
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
@@ -151,6 +161,7 @@ try:
             logger.add_scalar("valid_loss_dbp",epoch_val_loss_dbp,global_step=epoch)
 
         model_name  =   '%s/model_%d.pth' % (model_path, epoch)
+
         torch.save(model.state_dict(), model_name)
         cur_time    =   time.strftime("%H:%M:%S", time.localtime())
         print(

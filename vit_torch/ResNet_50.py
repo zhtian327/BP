@@ -1,7 +1,13 @@
 import torch.nn as nn
 import torch
-#import torchvision.models as models
+from functools import partial
+import torchvision.models as models
 from torchsummary import summary
+
+from torch import nn, einsum
+
+from einops import rearrange, repeat
+from einops.layers.torch import Rearrange
 import math
 
 class Bottleneck(nn.Module):
@@ -46,10 +52,10 @@ class Bottleneck(nn.Module):
         return out
 
 
-class ResNet(nn.Module):
-    def __init__(self, block=Bottleneck, layers=[2,2,2,2], channels = 16, num_classes=2):
+class ResNet_50(nn.Module):
+    def __init__(self, block=Bottleneck, layers=[3,4,6,3], channels = 64, num_classes=2):
         self.inplanes = channels
-        super(ResNet, self).__init__()
+        super(ResNet_50, self).__init__()
         self.conv1 = nn.Conv1d(1, channels, kernel_size=7, stride=2, padding=3,
                         bias=False)
         self.bn1 = nn.BatchNorm1d(channels)
@@ -109,8 +115,8 @@ class ResNet(nn.Module):
 
 
 if __name__ == '__main__':
-    pre_model = ResNet(Bottleneck, layers=[2,2,2,2]).cuda()
-    summary(pre_model,(1, 20 * 128))
+    pre_model = ResNet_50(Bottleneck, layers=[3,4,6,3],channels = 16).cuda()
+    summary(pre_model,(1,20*128))
     img = torch.randn(1, 1, 20 * 128)
     out = pre_model(img)
 
